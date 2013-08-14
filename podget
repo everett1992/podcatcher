@@ -20,7 +20,7 @@
 #
 # Description:   Podget is a simple bash script to automate the downloading and
 #                organizing of podcast content.
-# Dependencies:  bash, coreutils, grep, libc6 (for iconv), sed, tofrodos (unix2dos for ASX Playlists) and wget.
+# Dependencies:  bash, coreutils, grep, libc6 (for iconv), sed, tofrodos (unix2dos for ASX Playlists) and curl
 # Installation:  cp podget.sh /usr/local/bin
 #                chmod 755 /usr/local/bin/podget.sh                                                                              }}}
 # ----------------------------------------------------------------------------------------------------------------------------------
@@ -107,7 +107,7 @@ config_serverlist="serverlist"
 #  1 == Warning messages only.
 #  2 == Progress and Warning messages.
 #  3 == Debug, Progress and Warning messages.
-#  4 == All messages and wget set to maximum verbosity.
+#  4 == All messages and curl set to maximum verbosity.
 verbosity=2
 
 # Silent mode (for calling from cron jobs)
@@ -194,13 +194,11 @@ playlist_namebase=New-
 # Date format for new playlist names
 date_format=+%m-%d-%Y
 
-# Wget base options
+# Curl base options
 # Commonly used options:
-#   -c            Continued interupted downloads
-#   -nH           No host directories (overrides .wgetrc defaults if necessary)
-#   --proxy=off   To disable proxy set by environmental variable http_proxy/
-#wget_baseopts=-c --proxy=off
-wget_baseopts=-c -nH
+#   -C -          Continued interupted downloads
+#curl_baseopts=-C -
+curl_baseopts=-C -
 
 # Most Recent
 # 0  == download all new items.
@@ -526,14 +524,14 @@ if [ -n "$cmdl_asx" ] ; then
 fi
 
 if [ ${verbosity} -ge 3 ]; then 
-    echo "WGet options: ${wget_baseopts}"
+    echo "Curl options: ${curl_baseopts}"
 fi
 
 if [ -n "$cmdl_force" ] ; then
     force=$cmdl_force
-    wget_baseopts=$(echo $wget_baseopts | sed -e 's/-c //')
+    curl_baseopts=$(echo $curl_baseopts | sed -e 's/-c //')
     if [ ${verbosity} -ge 3 ]; then 
-        echo "WGet options: ${wget_baseopts}"
+        echo "Curl options: ${curl_baseopts}"
     fi
 fi
 
@@ -543,14 +541,18 @@ if [ -n "$cmdl_most_recent" ] ; then
 fi
 
 if [ $verbosity -le 1 ] ; then
-        wget_options="-q $wget_baseopts" 
+        curl="-s $curl_baseopts" 
 elif [ $verbosity -eq 2 ] ; then
-    wget_options="-nv $wget_baseopts" 
+    curl_options="$curl_baseopts -#" 
 elif [ $verbosity -eq 3 ] ; then
-    wget_options="$wget_baseopts --progress=dot:mega" 
+    curl_options="$curl_baseopts" 
 else
-    wget_options="$wget_baseopts --progress=bar" 
+    curl_options="$curl_baseopts" 
 fi
+
+echo "-------------------------"
+echo "curl_options $curl_options"
+echo "-------------------------"
 
 if [ ! -z $filename_badchars ] ; then
     # insert a space between all characters.
@@ -572,7 +574,7 @@ if [ $cleanup_only -eq 0 ] && [ -z $import_opml ] && [ -z $import_pcast ] ; then
     if [ $verbosity -ge 3 ] ; then
         echo -e "\nMain loop."
         echo "SERVER LIST FILE: $config_serverlist" 
-        echo "WGET OPTIONS: $wget_options" 
+        echo "CURL OPTIONS: $curl_options" 
     fi
 
     mkdir -p $dir_log
@@ -646,15 +648,18 @@ if [ $cleanup_only -eq 0 ] && [ -z $import_opml ] && [ -z $import_pcast ] ; then
                 echo "Downloading feed index from $feed_url" 
             fi
             
+            echo "-------------------------"
+            echo curl $curl_options -o - $feed_url 
+            echo "-------------------------"
             case $filetype in
                 'utf8')  
-                    indexfile=$(wget $wget_options -O - $feed_url  | sed -e 's/\r/\n/g' -e 's/<\([^/]\)/\n<\1/g' | \
+                    indexfile=$(curl $curl_options -o - $feed_url  | sed -e 's/\r/\n/g' -e 's/<\([^/]\)/\n<\1/g' | \
                         sed -n -e :a -e 's/.*<enclosure.*url\s*=\s*"\([^"]\+\)".*/\1/Ip' -e 't' \
                                      -e "s/.*<enclosure.*url\s*=\s*'\([^']\+\)'.*/\1/Ip" \
                                      -e '/<enclosure\s*/{N;s/ *\n/ /;ba;}' | \
                         sed -e "s/'/%27/g" -e 's/\&apos;/%27/g' -e 's/\&amp;/\&/g') ;;
                 'utf16') 
-                    indexfile=$(wget $wget_options -O - $feed_url | iconv -f UTF-16 -t UTF-8  | \
+                    indexfile=$(curl $curl_options -o - $feed_url | iconv -f UTF-16 -t UTF-8  | \
                         sed -e 's/\r/\n/g' -e 's/<\([^/]\)/\n<\1/g' | \
                         sed -n -e :a -e 's/.*<enclosure.*url\s*=\s*"\([^"]\+\)".*/\1/Ip' -e 't' \
                                      -e "s/.*<enclosure.*url\s*=\s*'\([^']\+\)'.*/\1/Ip" \
@@ -774,9 +779,12 @@ if [ $cleanup_only -eq 0 ] && [ -z $import_opml ] && [ -z $import_pcast ] ; then
                         fi
                         
                         if [ -n "$mod_filename" ] ; then
-                            wget $wget_options -O "$dir_library/$feed_category/$feed_name/$mod_filename" $url
+                            curl $curl_options -o "$dir_library/$feed_category/$feed_name/$mod_filename" $url
                         else
-                            wget $wget_options -P "$dir_library/$feed_category/$feed_name/" $url
+                            mkdir "$dir_library/$feed_category/$feed_name/"
+                            # This writes a file to the given directory using its filename on the remote
+                            # I need a combination of wgets -P and curl's -O
+                            (cd "$dir_library/$feed_category/$feed_name/" && curl $curl_options -O "$dir_library/$feed_category/$feed_name/" $url)
                         fi
                         
                         # Suggested fix from https://sourceforge.net/tracker/?func=detail&aid=2170298&group_id=133382&atid=727035
@@ -938,7 +946,7 @@ if [ ! -z $import_opml ] ; then
         if [ $verbosity -ge 2 ] ; then
             echo "Getting opml list."
         fi
-        opml_list=$(wget ${wget_options} -O - ${import_opml})
+        opml_list=$(curl ${curl_options} -o - ${import_opml})
     else
         opml_list=$(cat ${import_opml})
     fi
@@ -994,7 +1002,7 @@ if [ ! -z $import_pcast ] ; then
         if [ $verbosity -ge 2 ] ; then
             echo "Getting pcast file."
         fi
-        pcast_data=$(wget ${wget_options} -O - ${import_pcast})
+        pcast_data=$(curl ${curl_options} -o - ${import_pcast})
     else
         pcast_data=$(cat ${import_pcast})
     fi
@@ -1034,6 +1042,7 @@ rm -f "${dir_config}"/session.$$
 #     Relaxedgreen colorscheme (vimscripts #925 and #791).
 # 2.  Known Bug:  If the same filename is downloaded for multiple items on a
 #     single feed, wgets continue fuction will cause them to append or error.
+#     Is this still present with curl?
 #                                                                                                                                }}}
 # ----------------------------------------------------------------------------------------------------------------------------------
 # vim:tw=132:ts=4:sw=4
