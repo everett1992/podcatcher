@@ -1,0 +1,18 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    colorize (0.5.8)
+    mini_portile (0.5.1)
+    nokogiri (1.6.0)
+      mini_portile (~> 0.5.0)
+    ruby-progressbar (1.2.0)
+    taglib-ruby (0.6.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  colorize
+  nokogiri
+  ruby-progressbar
+  taglib-ruby
