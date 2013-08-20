@@ -2,6 +2,8 @@ require 'nokogiri'
 require 'open-uri'
 require 'rubygems'
 
+require 'rubygems'
+require 'active_support/inflector'
 require 'ruby-progressbar'
 require 'colorize'
 require 'taglib'
@@ -24,7 +26,7 @@ end
 # ignoring lines that start with the comment charecter #
 def parse_feed_file feed
   feed.each_line
-    .reject { |line| line[0] == '#' }
+    .reject { |line| blank?(line) || line[0] == '#' }
     .map { |line| parse_feed_line line}
 end
 
@@ -88,7 +90,8 @@ def size_to string, length
 end
 
 def longest_title_length items
-  items.max_by{|item| item[:title].length}[:title].length
+  return 0 if items.empty?
+  items.max_by{ |item| item[:title].length }[:title].length
 end
 
 def podcast_file url, show_title, publish_date, podcast_title, category
@@ -154,11 +157,15 @@ DONE_FILE = './done'
 POD_DIR = '~/Dropbox/podcasts/'
 
 feeds = parse_feed_file File.new(FEED_FILE, 'r')
-feeds.each do |url, category, title|
+r =  feeds.map do |url, category, title|
   puts "Downloading #{title.green} feed from #{url}"
   feed = download_feed url, title: title
   indent "Parsing feed file"
   items = new_podcasts(parse_feed(feed))
   indent "#{items.length} new #{title} podcasts"
   download_podcasts items, title, category
+
+  "#{items.length} new #{title.pluralize.green}"
 end
+
+puts r
