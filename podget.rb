@@ -8,18 +8,121 @@ require 'ruby-progressbar'
 require 'colorize'
 require 'taglib'
 
+class Object
+  # test.length if test
+  # - vs -
+  # test.try(:length)
+  def try method
+    send method if respond_to? method
+  end
+end
+
+class Podcast
+  attr_reader :title, :publish_date, :type, :url, :feed
+  def initialize title, publish_date, type, url, feed
+    @title, @publish_date, @type, @url, @feed = title, publish_date, type, url, feed
+  end
+
+  def is_audio?
+    (not blank?(@type)) && @type.match(/audio/)
+  end
+
+  def filename
+    file = []
+    file << POD_DIR
+    file << @feed.category if @feed.category
+    file << @feed.title if @feed.title
+    file << "#{publish_date.strftime(DATE_FORMAT)}_#{@title}#{File.extname(@url)}"
+
+    File.expand_path(File.join(file))
+  end
+
+  def download args
+    self.write(self.get(args))
+  end
+
+  def tag
+    TagLib::FileRef.open(self.filename) do |fileref|
+      tag = fileref.tag
+
+      tag.title = "#{@publish_date.strftime DATE_FORMAT} #{@title}"
+      tag.album = "Podcast"
+      tag.artist = @feed.title
+      fileref.save
+    end
+  end
+
+  def get args
+    open @url, args
+  end
+
+  def write podcast
+    create_dirs File.dirname(self.filename)
+    open(self.filename, "wb") do |file|
+      file.write podcast.read
+    end
+    Podcast.mark_downloaded self
+  end
+
+  def self.mark_downloaded podcast
+    File.open(DONE_FILE, "a") { |f| f.puts(podcast.url) } unless Podcast.is_downloaded? podcast
+  end
+
+  # Checks if the url has been downloaded already
+  def self.is_downloaded? podcast
+    blank?(podcast.url) || File.exists?(DONE_FILE) && File.new(DONE_FILE, "r").each_line.include?(podcast.url + "\n")
+  end
+
+end
+
+class Feed
+  attr_accessor :url, :category, :title
+
+  def initialize url, category, title
+    @url, @category, @title = url, category, title
+  end
+
+  # Remove items that have have been downloaded already
+  def new_podcasts
+    feed = self.download_feed
+    self.parse_feed(feed).reject { |item| !item.is_audio? || Podcast.is_downloaded?(item) }
+  end
+
+  protected
+
+  # Parse a feed xml returning the title, url, and publish_date of each item
+  def parse_feed feed 
+    Nokogiri::XML(feed).xpath("//item").map do |item|
+      enclosure = item.xpath("enclosure").first
+      title = item.xpath("title").inner_html.chomp
+      publish_date = Date.parse(item.xpath("pubDate").inner_html.chomp)
+      type = enclosure ? enclosure[:type] : nil
+      url = enclosure ? enclosure[:url] : nil
+      Podcast.new title, publish_date, type, url, self
+    end
+  end
+
+  def download_feed
+    puts "Downloading #{@title.green} feed from #{@url}"
+    open @url
+  end
+end
+
 # utils
 def blank? string
   string.nil? || !string.match(/[^\s]/)
 end
 
+def indent(*output)
+  puts output.map { |a| ":: ".red + a }
+end
 
-# -- Feed Methods --#
+#-- Feed Methods --#
 
 # Parse each line into url, category, title
 def parse_feed_line line
   # Return [url, category, title]
-  line.split(' ', 3).map(&:strip)
+  Feed.new(*line.split(' ', 3).map(&:strip))
 end
 
 # Parse the feed file into an array of [url, category, title]
@@ -32,100 +135,29 @@ end
 
 #-- Podcast Methods --#
 
-# Checks if the url has been downloaded already
-def is_recorded? url
-  blank?(url) || File.exists?(DONE_FILE) && File.new(DONE_FILE, "r").each_line.include?(url + "\n")
-end
-
-def is_audio? type
-  (not blank?(type)) && type.match(/audio/)
-end
-
-# Parse a feed xml returning the title, url, and publish_date of each item
-def parse_feed feed 
-  Nokogiri::XML(feed).xpath("//item").map do |item|
-    enclosure = item.xpath("enclosure").first
-    { 
-      title: item.xpath("title").inner_html.chomp,
-      publish_date: Date.parse(item.xpath("pubDate").inner_html.chomp),
-      type: enclosure ? enclosure[:type] : nil,
-      url: enclosure ? enclosure[:url] : nil
-    }
-  end
-end
-
-# Remove items that have have been downloaded already
-def new_podcasts items
-  items.reject { |item| (not is_audio?(item[:type])) || is_recorded?(item[:url]) }
-end
-
-# TODO: this overwrites the file each time it is called, it needs to append instead.
-def record_done url
-  File.open(DONE_FILE, "a") { |f| f.puts(url) } unless is_recorded? url
-end
-
-def download_feed url, args = {}
-  open url
-end
-
-def download_podcast url, args = {}
-  download url, args.merge(format: '%t %a [%B] %p%%')
-end
-
-def download url, args = {}
-  pb = ProgressBar.create args.merge progress_mark: '#', smoothing: 0.5
-  set_total = lambda { |total| pb.total = total}
-  progress = lambda { |size| pb.progress = size }
-  file = open url, :content_length_proc => set_total, :progress_proc => progress
-  return file
-end
 
 def size_to string, length
+  p string
   if string.length > length
     append = "..."
-    return string[0..(length-append.length-1)] + append
+    return string[0..(length - append.length - 1)] + append
   else
     return string.ljust(length)
   end
 end
 
-def longest_title_length items
-  return 0 if items.empty?
-  items.max_by{ |item| item[:title].length }[:title].length
-end
-
-def podcast_file url, show_title, publish_date, podcast_title, category
-  file = []
-  file << POD_DIR
-  file << category if category
-  file << podcast_title if podcast_title
-  file << "#{publish_date.strftime(DATE_FORMAT)}_#{show_title}#{File.extname(url)}"
-
-  File.expand_path(File.join(file))
-end
-
-def retag_file file, show_title, publish_date, podcast_title
-  TagLib::FileRef.open(file) do |fileref|
-    tag = fileref.tag
-
-    tag.title = "#{publish_date.strftime DATE_FORMAT} #{show_title}"
-    tag.album = "Podcast"
-    tag.artist = podcast_title
-    fileref.save
-  end
-end
-
-def download_podcasts items, podcast_title, podcast_category
-  max = longest_title_length items
+def download_podcasts podcasts
+  max = podcasts.map(&:title).max.try(:length) || 0
   max = 40 if max > 40
-  items.each_with_index.map do |item, n|
-    url, show_title, publish_date = item[:url], item[:title], item[:publish_date]
+  podcasts.each_with_index.map do |podcast, n|
+    pb_title = "(#{n+1}/#{podcasts.length}) #{size_to(podcast.title, max)}"
 
-    pb_title = "(#{n+1}/#{items.length}) #{size_to(show_title, max)}"
-    file = podcast_file url, show_title, publish_date, podcast_title, podcast_category
+    pb = ProgressBar.create title: pb_title, progress_mark: '#', smoothing: 0.5, format: '%t %a [%B] %p%%'
+    set_total = lambda { |total| pb.total = total}
+    progress = lambda { |size| pb.progress = size }
 
-    get_podcast url, pb_title, file
-    retag_file file, show_title, publish_date, podcast_title
+    podcast.download :content_length_proc => set_total, :progress_proc => progress
+    podcast.tag
   end
 end
 
@@ -138,15 +170,6 @@ end
 
 # Download 
 def get_podcast url, title, podcast_file
-  create_dirs File.dirname(podcast_file)
-  open(podcast_file, "wb") do |file|
-    file.write download_podcast(url, title: title).read
-  end
-  record_done url
-end
-
-def indent(*output)
-  puts output.map { |a| ":: ".red + a }
 end
 
 DATE_FORMAT = '%Y-%m-%d'
@@ -158,15 +181,8 @@ DONE_FILE = File.join(CONF_DIR, 'done')
 POD_DIR = '~/Dropbox/podcasts/'
 
 feeds = parse_feed_file File.new(FEED_FILE, 'r')
-r =  feeds.map do |url, category, title|
-  puts "Downloading #{title.green} feed from #{url}"
-  feed = download_feed url, title: title
-  indent "Parsing feed file"
-  items = new_podcasts(parse_feed(feed))
-  indent "#{items.length} new #{title} podcasts"
-  download_podcasts items, title, category
-
-  "#{items.length} new #{title.pluralize.green}"
+feeds.map do |feed|
+  podcasts = feed.new_podcasts
+  indent "#{podcasts.count} new #{feed.title} podcasts"
+  download_podcasts podcasts
 end
-
-puts r
