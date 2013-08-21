@@ -151,8 +151,9 @@ end
 
 DATE_FORMAT = '%Y-%m-%d'
 
-FEED_FILE = './serverlist'
-DONE_FILE = './done'
+CONF_DIR = File.join(Dir.home, '.podcatcher')
+FEED_FILE = File.join(CONF_DIR, 'serverlist')
+DONE_FILE = File.join(CONF_DIR, 'done')
 
 POD_DIR = '~/Dropbox/podcasts/'
 
