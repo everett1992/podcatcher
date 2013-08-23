@@ -137,7 +137,6 @@ end
 
 
 def size_to string, length
-  p string
   if string.length > length
     append = "..."
     return string[0..(length - append.length - 1)] + append
