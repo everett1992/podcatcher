@@ -27,6 +27,10 @@ class Podcast
     (not blank?(@type)) && @type.match(/audio/)
   end
 
+  def is_downloaded?
+    File.exists?(self.filename)
+  end
+
   def filename
     file = []
     file << POD_DIR
@@ -61,18 +65,7 @@ class Podcast
     open(self.filename, "wb") do |file|
       file.write podcast.read
     end
-    Podcast.mark_downloaded self
   end
-
-  def self.mark_downloaded podcast
-    File.open(DONE_FILE, "a") { |f| f.puts(podcast.url) } unless Podcast.is_downloaded? podcast
-  end
-
-  # Checks if the url has been downloaded already
-  def self.is_downloaded? podcast
-    blank?(podcast.url) || File.exists?(DONE_FILE) && File.new(DONE_FILE, "r").each_line.include?(podcast.url + "\n")
-  end
-
 end
 
 class Feed
@@ -85,7 +78,7 @@ class Feed
   # Remove items that have have been downloaded already
   def new_podcasts
     feed = self.download_feed
-    self.parse_feed(feed).reject { |item| !item.is_audio? || Podcast.is_downloaded?(item) }
+    self.parse_feed(feed).reject { |podcast| !podcast.is_audio? || podcast.is_downloaded? }
   end
 
   protected
@@ -175,9 +168,8 @@ DATE_FORMAT = '%Y-%m-%d'
 
 CONF_DIR = File.join(Dir.home, '.podcatcher')
 FEED_FILE = File.join(CONF_DIR, 'serverlist')
-DONE_FILE = File.join(CONF_DIR, 'done')
 
-POD_DIR = '~/Dropbox/podcasts/'
+POD_DIR = '~/Music/Podcasts/'
 
 feeds = parse_feed_file File.new(FEED_FILE, 'r')
 feeds.map do |feed|

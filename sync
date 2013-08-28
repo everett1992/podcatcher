@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Sync downloaded podcasts between devices
+
+# -- Configs -- #
+
+this='/mnt/caleb_500/Podcasts'
+libraries="$this"
+
+host="$(hostname)"
+
+if [[ "$host" = "ragnarok" ]]; then
+  libraries="/home/caleb/Music/Podcasts $libraries"
+fi
+
+if [[ "$host" = "rincewind" ]]; then
+  libraries="/home/caleb/Music/Podcasts $libraries"
+fi
+
+echo $libraries
+
+for from in $libraries; do
+  for to in $libraries; do
+    echo "Syncing $from to $to"
+    rsync -azh $from/ $to --progress
+  done
+done
