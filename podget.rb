@@ -36,9 +36,13 @@ class Podcast
     file << POD_DIR
     file << @feed.category if @feed.category
     file << @feed.title if @feed.title
-    file << "#{publish_date.strftime(DATE_FORMAT)}_#{@title}#{File.extname(@url)}"
+    file << "#{@publish_date.strftime(DATE_FORMAT)}_#{@title}#{self.file_extension}"
 
     File.expand_path(File.join(file))
+  end
+
+  def file_extension
+    File.extname(@url).split('?').first
   end
 
   def download args
@@ -106,8 +110,7 @@ def blank? string
   string.nil? || !string.match(/[^\s]/)
 end
 
-def indent(*output)
-  puts output.map { |a| ":: ".red + a }
+def indent(*output) puts output.map { |a| ":: ".red + a }
 end
 
 #-- Feed Methods --#
@@ -140,7 +143,7 @@ end
 
 def download_podcasts podcasts
   max = podcasts.map(&:title).max.try(:length) || 0
-  max = 40 if max > 40
+  max = 40 if max > 70
   podcasts.each_with_index.map do |podcast, n|
     pb_title = "(#{n+1}/#{podcasts.length}) #{size_to(podcast.title, max)}"
 
@@ -150,6 +153,8 @@ def download_podcasts podcasts
 
     podcast.download :content_length_proc => set_total, :progress_proc => progress
     podcast.tag
+
+    podcast
   end
 end
 
@@ -172,8 +177,21 @@ FEED_FILE = File.join(CONF_DIR, 'serverlist')
 POD_DIR = '~/Music/Podcasts/'
 
 feeds = parse_feed_file File.new(FEED_FILE, 'r')
-feeds.map do |feed|
+results = feeds.map do |feed|
   podcasts = feed.new_podcasts
   indent "#{podcasts.count} new #{feed.title} podcasts"
-  download_podcasts podcasts
+  downloaded = download_podcasts podcasts
+  { title: feed.title, downloaded: downloaded }
+end
+
+results.each do |feed|
+  length = feed[:downloaded].length
+  if length > 0
+    puts "#{feed[:title]}:"
+    if length < 10
+      feed[:downloaded].each { |e| indent e.title }
+    else
+      indent "#{length} new"
+    end
+  end
 end

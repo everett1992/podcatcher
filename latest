@@ -1,0 +1,9 @@
+#!/bin/bash
+
+podcast_dir='/home/caleb/Music/Podcasts'
+date_fmt='%Y-%m-%d'
+
+for i in $(seq 0 $1); do
+  date=$(date --date="$i days ago" +$date_fmt)
+  find $podcast_dir -iname "$date*"
+done
