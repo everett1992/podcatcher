@@ -1,3 +1,4 @@
+require 'cgi'
 require 'nokogiri'
 require 'open-uri'
 require 'rubygems'
@@ -91,7 +92,8 @@ class Feed
   def parse_feed feed 
     Nokogiri::XML(feed).xpath("//item").map do |item|
       enclosure = item.xpath("enclosure").first
-      title = item.xpath("title").inner_html.chomp
+
+      title = CGI::unescapeHTML(item.xpath("title").text.chomp)
       publish_date = Date.parse(item.xpath("pubDate").inner_html.chomp)
       type = enclosure ? enclosure[:type] : nil
       url = enclosure ? enclosure[:url] : nil
