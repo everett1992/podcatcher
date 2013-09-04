@@ -22,6 +22,6 @@ echo $libraries
 for from in $libraries; do
   for to in $libraries; do
     echo "Syncing $from to $to"
-    rsync -azh $from/ $to --progress
+    rsync -rzh $from/ $to --progress
   done
 done
