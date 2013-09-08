@@ -5,5 +5,5 @@ date_fmt='%Y-%m-%d'
 
 for i in $(seq 0 $1); do
   date=$(date --date="$i days ago" +$date_fmt)
-  find $podcast_dir -iname "$date*"
+  find $podcast_dir -iname "$date*" -print0 | xargs -0 -n1 basename
 done
