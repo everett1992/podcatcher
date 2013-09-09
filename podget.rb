@@ -22,6 +22,16 @@ class Podcast
   attr_reader :title, :publish_date, :type, :url, :feed
   def initialize title, publish_date, type, url, feed
     @title, @publish_date, @type, @url, @feed = title, publish_date, type, url, feed
+    @status = :new
+  end
+
+  def status
+    @status = :downloaded if self.is_downloaded?
+    return @status
+  end
+
+  def status= status
+    @status = status
   end
 
   def is_audio?
@@ -74,22 +84,61 @@ class Podcast
 end
 
 class Feed
-  attr_accessor :url, :category, :title
+  attr_accessor :url, :category, :title, :feed
 
   def initialize url, category, title
     @url, @category, @title = url, category, title
+
+    @podcasts = self.parse_feed.reject do |podcast|
+      !podcast.is_audio? || podcast.is_downloaded?
+    end
   end
 
-  # Remove items that have have been downloaded already
-  def new_podcasts
-    feed = self.download_feed
-    self.parse_feed(feed).reject { |podcast| !podcast.is_audio? || podcast.is_downloaded? }
+  def podcasts
+    return @podcasts
+  end
+
+  def new
+    @podcasts.select { |p| p.status == :new }
+  end
+
+  def downloaded
+    @podcasts.select { |p| p.status == :downloaded }
+  end
+
+  def failed
+    @podcasts.select { |p| p.status == :failed }
+  end
+
+  def download
+    max = @podcasts.map(&:title).max.try(:length) || 0
+    max = 40 if max > 70
+    @podcasts.each_with_index.map do |podcast, n|
+      pb_title = "(#{n+1}/#{@podcasts.length}) #{size_to(podcast.title, max)}"
+
+      pb = ProgressBar.create title: pb_title, progress_mark: '#', smoothing: 0.5, format: '%t %a [%B] %p%%'
+      set_total = lambda { |total| pb.total = total}
+      progress = lambda { |size| pb.progress = size }
+
+      begin
+        podcast.download :content_length_proc => set_total, :progress_proc => progress
+        podcast.tag
+      rescue OpenURI::HTTPError
+        pb.stop
+        indent "#{podcast.title} failed to download".red
+        podcast.status = :failed
+      end
+
+      podcast
+    end
+
   end
 
   protected
 
   # Parse a feed xml returning the title, url, and publish_date of each item
-  def parse_feed feed 
+  def parse_feed
+    feed = self.download_feed
     Nokogiri::XML(feed).xpath("//item").map do |item|
       enclosure = item.xpath("enclosure").first
 
@@ -143,23 +192,6 @@ def size_to string, length
   end
 end
 
-def download_podcasts podcasts
-  max = podcasts.map(&:title).max.try(:length) || 0
-  max = 40 if max > 70
-  podcasts.each_with_index.map do |podcast, n|
-    pb_title = "(#{n+1}/#{podcasts.length}) #{size_to(podcast.title, max)}"
-
-    pb = ProgressBar.create title: pb_title, progress_mark: '#', smoothing: 0.5, format: '%t %a [%B] %p%%'
-    set_total = lambda { |total| pb.total = total}
-    progress = lambda { |size| pb.progress = size }
-
-    podcast.download :content_length_proc => set_total, :progress_proc => progress
-    podcast.tag
-
-    podcast
-  end
-end
-
 def create_dirs file
   unless Dir.exists? file
     create_dirs File.dirname(file)
@@ -167,7 +199,7 @@ def create_dirs file
   end
 end
 
-# Download 
+# Download
 def get_podcast url, title, podcast_file
 end
 
@@ -178,22 +210,31 @@ FEED_FILE = File.join(CONF_DIR, 'serverlist')
 
 POD_DIR = '~/Music/Podcasts/'
 
+# Download feeds
+
 feeds = parse_feed_file File.new(FEED_FILE, 'r')
+
+# Download Podcasts
+
 results = feeds.map do |feed|
-  podcasts = feed.new_podcasts
-  indent "#{podcasts.count} new #{feed.title} podcasts"
-  downloaded = download_podcasts podcasts
-  { title: feed.title, downloaded: downloaded }
+  if feed.new.length > 0
+    indent "#{feed.new.length} new #{feed.title} podcasts"
+    feed.download
+  end
+
+  feed
 end
 
+# List downloaded podcasts
+
 results.each do |feed|
-  length = feed[:downloaded].length
-  if length > 0
-    puts "#{feed[:title]}:"
-    if length < 10
-      feed[:downloaded].each { |e| indent e.title }
+  num_podcasts = feed.downloaded.length
+  if num_podcasts > 0
+    puts "#{feed.title}:"
+    if num_podcasts < 10
+      feed.downloaded.each { |e| indent e.title }
     else
-      indent "#{length} new"
+      indent "#{num_podcasts} new"
     end
   end
 end
