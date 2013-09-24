@@ -111,8 +111,7 @@ class Feed
   end
 
   def download
-    max = @podcasts.map(&:title).max.try(:length) || 0
-    max = 40 if max > 70
+    max = 40
     @podcasts.each_with_index.map do |podcast, n|
       pb_title = "(#{n+1}/#{@podcasts.length}) #{size_to(podcast.title, max)}"
 
