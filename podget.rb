@@ -5,6 +5,7 @@ require 'rubygems'
 
 require 'rubygems'
 require 'active_support/inflector'
+require 'active_support/core_ext'
 require 'ruby-progressbar'
 require 'colorize'
 require 'taglib'
@@ -43,11 +44,18 @@ class Podcast
   end
 
   def filename
+
+    title = @title.gsub("/", "-")
+    max_file_name_length = 200
+    if title.length > max_file_name_length
+      title = title[0..(max_file_name_length)]
+    end
     file = []
     file << POD_DIR
     file << @feed.category if @feed.category
     file << @feed.title if @feed.title
-    file << "#{@publish_date.strftime(DATE_FORMAT)}_#{@title}#{self.file_extension}"
+    file << @publish_date.strftime("%y-%m %b");
+    file << "#{@publish_date.strftime(DATE_FORMAT)} - #{title}#{self.file_extension}"
 
     File.expand_path(File.join(file))
   end
@@ -60,12 +68,19 @@ class Podcast
     self.write(self.get(args))
   end
 
+  def week_of
+    week = @publish_date.all_week
+    return "#{week.first.year} #{week.first.strftime("%m-%d")}..#{week.last.strftime("%m-%d")}"
+  end
+
   def tag
+
+
     TagLib::FileRef.open(self.filename) do |fileref|
       tag = fileref.tag
 
       tag.title = "#{@publish_date.strftime DATE_FORMAT} #{@title}"
-      tag.album = "Podcast"
+      tag.album = self.week_of
       tag.artist = @feed.title
       fileref.save
     end
@@ -142,7 +157,7 @@ class Feed
       enclosure = item.xpath("enclosure").first
 
       title = CGI::unescapeHTML(item.xpath("title").text.chomp)
-      publish_date = Date.parse(item.xpath("pubDate").inner_html.chomp)
+      publish_date = Time.parse(item.xpath("pubDate").inner_html.chomp)
       type = enclosure ? enclosure[:type] : nil
       url = enclosure ? enclosure[:url] : nil
       Podcast.new title, publish_date, type, url, self
